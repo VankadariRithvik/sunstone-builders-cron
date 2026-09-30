@@ -1,0 +1,34 @@
+# Hall of Fame scoring hourly check (copy of aarushmishra/sunstone-builders; that repo's Actions are billing-blocked). Server-side lock makes duplicate triggers harmless.
+# Cron Job: this just pokes the endpoint once an hour; api/cron/hof-scoring.ts
+# decides everything itself (window still open -> no-op; month closed ->
+# freeze projects + score in the background; already scoring -> resume;
+# review/published -> no-op). The endpoint answers immediately, so this job
+# is always fast even while a multi-hour scoring run is in progress.
+#
+# A failed call shows up red in the Actions tab and (by default) emails the
+# repo's watchers. The admin ranking workspace's "Resume scoring" button
+# calls the same endpoint as a manual fallback.
+name: HOF scoring (hourly check)
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: hof-scoring
+  cancel-in-progress: false
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run HOF scoring check
+        run: |
+          response=$(curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            https://sunstone-builders.onrender.com/api/cron/hof-scoring)
+          echo "$response"
+          echo "$response" | grep -q '"ok":true' || exit 1
