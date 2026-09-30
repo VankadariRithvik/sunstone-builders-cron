@@ -1,0 +1,34 @@
+# Weekly Leaderboard recompute, 3× daily — same free-cron pattern as the other
+# scheduled jobs (GitHub Actions curling Render; Render Cron Jobs are paid).
+#
+# Three runs keep the board fresh through the day; the SUNDAY 23:30 IST run is
+# the week's final — the cron archives that snapshot into weekly_results
+# itself (see api/cron/weekly-leaderboard.ts), so Monday 00:00 the current
+# week reads zero and the ‹ previous-week view already has the finals.
+name: Weekly leaderboard sync (3x daily)
+
+on:
+  schedule:
+    # IST = UTC+5:30. 10:00 / 17:00 / 23:30 IST.
+    - cron: '30 4 * * *'   # 10:00 IST
+    - cron: '30 11 * * *'  # 17:00 IST
+    - cron: '0 18 * * *'   # 23:30 IST — Sunday's run is the weekly final
+  workflow_dispatch: {}
+
+# Never let a delayed tick overlap a still-running one — queue instead.
+concurrency:
+  group: weekly-leaderboard
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run weekly leaderboard sync
+        run: |
+          response=$(curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            https://sunstone-builders.onrender.com/api/cron/weekly-leaderboard)
+          echo "$response"
+          echo "$response" | grep -q '"ok":true' || exit 1
