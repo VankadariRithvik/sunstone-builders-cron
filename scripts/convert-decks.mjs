@@ -41,6 +41,10 @@ async function setRow(id, patch) {
   });
 }
 
+async function exists(path) {
+  try { await readFile(path); return true; } catch { return false; }
+}
+
 async function convertOne(row) {
   const dir = await mkdtemp(join(tmpdir(), 'deck-'));
   try {
@@ -52,7 +56,15 @@ async function convertOne(row) {
     if (buf.length > MAX_BYTES) throw new Error(`file too large (${Math.round(buf.length / 1e6)}MB)`);
     await writeFile(input, buf);
 
-    await run('soffice', ['--headless', '--norestore', '--convert-to', 'pdf', '--outdir', dir, input], { timeout: 180_000 });
+    // Fresh LibreOffice profile per file: a profile left half-written by a
+    // previous crash makes soffice exit 0 without writing a PDF.
+    const profile = `-env:UserInstallation=file://${join(dir, 'lo-profile')}`;
+    await run('soffice', [profile, '--headless', '--norestore', '--convert-to', 'pdf', '--outdir', dir, input], { timeout: 180_000 }).catch(() => {});
+    if (!(await exists(join(dir, 'deck.pdf')))) {
+      // Second try: force the PowerPoint import filter and the Impress PDF export.
+      await run('soffice', [profile, '--headless', '--norestore', `--infilter=${ext === 'ppt' ? 'MS PowerPoint 97' : 'Impress MS PowerPoint 2007 XML'}`, '--convert-to', 'pdf:impress_pdf_Export', '--outdir', dir, input], { timeout: 180_000 });
+    }
+    if (!(await exists(join(dir, 'deck.pdf')))) throw new Error('LibreOffice could not convert this file (no PDF produced after 2 tries)');
     const pdf = await readFile(join(dir, 'deck.pdf'));
     if (pdf.length < 500) throw new Error('converter produced an empty PDF');
 
