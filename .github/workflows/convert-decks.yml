@@ -1,7 +1,7 @@
 # Converts uploaded slide decks (.ppt/.pptx/.pps/.ppsx) to PDF so the app can
 # show them in its own PDF viewer (migration 0146 in sunstone-builders).
 # Triggered right after a publish (the API sends repository_dispatch
-# 'convert-decks'), plus a 15-minute schedule as a safety net. Each run
+# 'convert-decks'), plus a 5-minute schedule (the main trigger when no dispatch token is set). Each run
 # converts everything queued (convert_status = 'pending'), then exits.
 #
 # Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
@@ -11,7 +11,7 @@ on:
   repository_dispatch:
     types: [convert-decks]
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
 concurrency:
