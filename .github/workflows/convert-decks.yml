@@ -31,7 +31,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          n=$(curl -sS "$SUPABASE_URL/rest/v1/project_artifacts?select=id&convert_status=eq.pending&limit=1" \
+          n=$(curl -sS "$SUPABASE_URL/rest/v1/project_artifacts?select=id&convert_status=eq.pending&storage_path=not.is.null&limit=1" \
             -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" | grep -c '"id"' || true)
           echo "pending=$n" >> "$GITHUB_OUTPUT"
           echo "pending: $n"
