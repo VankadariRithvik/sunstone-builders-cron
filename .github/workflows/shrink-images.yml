@@ -1,0 +1,50 @@
+# One-time shrink of oversized avatars/covers in Supabase Storage (manual only).
+# Originals are copied to backup-originals/<path> in the same bucket first;
+# objects are overwritten at the same path, so no DB change is needed.
+# Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (same as convert-decks).
+name: Shrink images (one-time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (log only, write nothing)'
+        type: boolean
+        default: true
+      limit:
+        description: 'Max files to change this run'
+        default: '10'
+      kind:
+        description: 'avatar | cover | all'
+        default: 'avatar'
+      min_bytes:
+        description: 'Only files bigger than this (bytes)'
+        default: '150000'
+
+concurrency:
+  group: shrink-images
+  cancel-in-progress: false
+
+jobs:
+  shrink:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm i --no-save sharp@0.34
+      - name: Shrink
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          LIMIT: ${{ inputs.limit }}
+          KIND: ${{ inputs.kind }}
+          MIN_BYTES: ${{ inputs.min_bytes }}
+        run: node scripts/shrink-images.mjs | tee shrink-log.jsonl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shrink-log
+          path: shrink-log.jsonl
