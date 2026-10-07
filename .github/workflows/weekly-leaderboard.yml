@@ -23,12 +23,18 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # A full run is ~15–35 min of short calls; leave room for retries.
+    timeout-minutes: 90
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Many short calls (start → coding batches → github batches → finish),
+      # each retried on its own, instead of one 15–30 minute request that any
+      # Render restart killed (curl 56). Falls back to the single request if
+      # the API doesn't support batches. See scripts/weekly-leaderboard.mjs.
       - name: Run weekly leaderboard sync
-        run: |
-          response=$(curl -sS -X POST \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json" \
-            https://sunstone-builders.onrender.com/api/cron/weekly-leaderboard)
-          echo "$response"
-          echo "$response" | grep -q '"ok":true' || exit 1
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node scripts/weekly-leaderboard.mjs
