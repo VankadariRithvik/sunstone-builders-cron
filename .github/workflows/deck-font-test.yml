@@ -1,0 +1,35 @@
+# Test only: converts one deck with the old font set and with the new one,
+# uploads both PDFs. Writes nothing to Supabase.
+name: Deck font test
+
+on:
+  workflow_dispatch:
+    inputs:
+      deck_url:
+        description: Public URL of a .pptx deck
+        default: https://cgczledhhmbbdiblppon.supabase.co/storage/v1/object/public/project-artifacts/9d757d01-927f-4e93-a67e-961898adfa51/1791527440148-eqv4op.pptx
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download deck
+        run: mkdir -p work && curl -sSfL "${{ inputs.deck_url }}" -o work/deck.pptx
+      - name: Baseline (old fonts)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libreoffice-impress fonts-dejavu fonts-liberation fonts-noto-core >/dev/null
+          mkdir -p before
+          soffice -env:UserInstallation=file://$PWD/lo-a --headless --norestore --convert-to pdf --outdir before work/deck.pptx
+      - name: Install fonts
+        run: bash scripts/install-deck-fonts.sh
+      - name: New fonts
+        run: |
+          mkdir -p after
+          soffice -env:UserInstallation=file://$PWD/lo-b --headless --norestore --convert-to pdf --outdir after work/deck.pptx
+      - uses: actions/upload-artifact@v4
+        with: { name: before, path: before/*.pdf }
+      - uses: actions/upload-artifact@v4
+        with: { name: after, path: after/*.pdf }

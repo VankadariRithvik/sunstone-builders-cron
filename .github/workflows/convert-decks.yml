@@ -36,11 +36,9 @@ jobs:
           echo "pending=$n" >> "$GITHUB_OUTPUT"
           echo "pending: $n"
 
-      - name: Install LibreOffice
+      - name: Install LibreOffice and fonts
         if: steps.queue.outputs.pending != '0'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends libreoffice-impress fonts-dejavu fonts-liberation fonts-noto-core >/dev/null
+        run: bash scripts/install-deck-fonts.sh
 
       - uses: actions/setup-node@v4
         if: steps.queue.outputs.pending != '0'
