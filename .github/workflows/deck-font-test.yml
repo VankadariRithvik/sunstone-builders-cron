@@ -3,6 +3,9 @@
 name: Deck font test
 
 on:
+  push:
+    branches: [deck-fonts]
+    paths: ['.github/workflows/deck-font-test.yml', 'scripts/install-deck-fonts.sh']
   workflow_dispatch:
     inputs:
       deck_url:
@@ -16,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download deck
-        run: mkdir -p work && curl -sSfL "${{ inputs.deck_url }}" -o work/deck.pptx
+        run: mkdir -p work && curl -sSfL "${{ inputs.deck_url || 'https://cgczledhhmbbdiblppon.supabase.co/storage/v1/object/public/project-artifacts/9d757d01-927f-4e93-a67e-961898adfa51/1791527440148-eqv4op.pptx' }}" -o work/deck.pptx
       - name: Baseline (old fonts)
         run: |
           sudo apt-get update -qq
