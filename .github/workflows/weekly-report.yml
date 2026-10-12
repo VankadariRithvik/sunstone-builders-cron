@@ -1,0 +1,37 @@
+# Weekly faculty report email — every Monday 07:30 IST.
+# Computes last week's campus numbers once and queues one email per signed-in
+# faculty member. With auto-send off (default) only the previews go to the
+# admin addresses; an admin then presses "Approve and send" on /analytics.
+# Safe to run more than once: a second call for the same week does nothing.
+name: Weekly faculty report (Mon 07:30 IST)
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'   # 02:00 UTC Monday = 07:30 IST
+  workflow_dispatch: {}
+
+concurrency:
+  group: weekly-report
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Run weekly report
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Render may be waking up — retry a few times before failing.
+          for attempt in 1 2 3 4 5; do
+            response=$(curl -sS --max-time 300 -X POST \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              -H "Content-Type: application/json" \
+              -d '{}' \
+              https://sunstone-builders.onrender.com/api/weekly-report/run) || response=''
+            echo "attempt $attempt: $response"
+            if echo "$response" | grep -q '"ok":true'; then exit 0; fi
+            sleep 60
+          done
+          exit 1
