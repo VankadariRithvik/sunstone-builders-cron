@@ -1,0 +1,43 @@
+# Daily campus progress snapshot — every day 23:55 IST.
+# Stores per-campus students, students with a linked profile, complete
+# profiles, new students and per-platform link counts for the day
+# (campus_daily_stats, migration 0173), so "what changed in the last N days by
+# campus" can be answered exactly. Re-running a day overwrites it, so retries
+# and manual runs are safe.
+name: Campus daily snapshot (23:55 IST)
+
+on:
+  schedule:
+    - cron: '25 18 * * *'   # 18:25 UTC = 23:55 IST
+  workflow_dispatch: {}
+
+concurrency:
+  group: campus-daily-snapshot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Snapshot today's campus progress
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # GitHub schedules can start late. Label the snapshot with the IST
+          # day it was meant for: a run that slips past midnight (up to 6h)
+          # still counts as the previous day.
+          day=$(TZ=Asia/Kolkata date -d '-6 hours' +%F)
+          echo "snapshot day: $day"
+          # Render may be waking up — retry a few times before failing.
+          for attempt in 1 2 3 4 5; do
+            response=$(curl -sS --max-time 180 -X POST \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              -H "Content-Type: application/json" \
+              -d "{\"date\":\"$day\"}" \
+              https://sunstone-builders.onrender.com/api/cron/campus-daily-snapshot) || response=''
+            echo "attempt $attempt: $response"
+            if echo "$response" | grep -q '"ok":true'; then exit 0; fi
+            sleep 60
+          done
+          exit 1
