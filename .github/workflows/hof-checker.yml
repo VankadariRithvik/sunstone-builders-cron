@@ -1,0 +1,153 @@
+# Hall of Fame website checker (hof-checker/ in aarushmishra/sunstone-builders).
+# This repo is PUBLIC: triggers are only workflow_dispatch and
+# repository_dispatch (never pull_request / pull_request_target), logs show
+# only counts and project IDs (the checker hides everything else when CI is
+# set), and nothing is uploaded as an artifact.
+#
+# Started by Supabase Cron (pg_net -> repository_dispatch 'hof-checker'):
+#   nightly 00:30 IST Tue 27 – Sat 31 Oct, freeze 00:05 IST Sun 1 Nov,
+#   re-check ~03:05 IST Sun 1 Nov (no +12 h re-check). client_payload:
+#   { "kind": "nightly|freeze|recheck_3h", "cycle": "2026-10", "ref": "main" }
+# Daily retention: repository_dispatch 'hof-retention'.
+#
+# Secrets: MAIN_REPO_TOKEN (fine-grained, read-only Contents on
+# aarushmishra/sunstone-builders), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+# HOF_CRED_KEY, HOF_GITHUB_TOKEN (repo checks), HOF_SCORING_URL, CRON_SECRET (already in the repo).
+name: HoF website checker
+
+on:
+  repository_dispatch:
+    types: [hof-checker, hof-retention]
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: 'nightly | freeze | recheck_3h | manual'
+        default: nightly
+        required: true
+      cycle:
+        description: 'Hall of Fame month, e.g. 2026-10'
+        default: '2026-10'
+        required: true
+      ref:
+        description: 'Branch of sunstone-builders to run'
+        default: main
+        required: true
+      task:
+        description: 'check | retention'
+        default: check
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hof-checker-${{ github.event.client_payload.kind || inputs.kind || 'retention' }}
+  cancel-in-progress: false
+
+env:
+  KIND: ${{ github.event.client_payload.kind || inputs.kind || 'nightly' }}
+  CYCLE: ${{ github.event.client_payload.cycle || inputs.cycle || '2026-10' }}
+  REF: ${{ github.event.client_payload.ref || inputs.ref || 'main' }}
+  TASK: ${{ github.event.action == 'hof-retention' && 'retention' || inputs.task || 'check' }}
+  RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  check:
+    if: ${{ (github.event.action == 'hof-checker') || (github.event_name == 'workflow_dispatch' && inputs.task == 'check') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: aarushmishra/sunstone-builders
+          ref: ${{ env.REF }}
+          token: ${{ secrets.MAIN_REPO_TOKEN }}
+          sparse-checkout: |
+            hof-checker
+            api/_lib/hof-types.ts
+            api/_lib/hof-cred-crypto.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: hof-checker/package-lock.json
+      - name: Install
+        working-directory: hof-checker
+        run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium > /dev/null
+      - name: Check sites (shard ${{ matrix.shard }} of 10)
+        working-directory: hof-checker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          HOF_CRED_KEY: ${{ secrets.HOF_CRED_KEY }}
+          GITHUB_TOKEN: ${{ secrets.HOF_GITHUB_TOKEN }}
+        run: npm run check -- --cycle "$CYCLE" --kind "$KIND" --shard ${{ matrix.shard }} --shards 10 --run-id "$RUN_ID"
+
+  finish:
+    needs: check
+    if: ${{ always() && needs.check.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: aarushmishra/sunstone-builders
+          ref: ${{ env.REF }}
+          token: ${{ secrets.MAIN_REPO_TOKEN }}
+          sparse-checkout: |
+            hof-checker
+            api/_lib/hof-types.ts
+            api/_lib/hof-cred-crypto.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: hof-checker/package-lock.json
+      - name: Install
+        working-directory: hof-checker
+        run: npm ci --no-audit --no-fund
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - name: Outage rule, counts, start scoring
+        working-directory: hof-checker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          HOF_SCORING_URL: ${{ secrets.HOF_SCORING_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: npm run finish -- --cycle "$CYCLE" --run-id "$RUN_ID"
+
+  retention:
+    if: ${{ github.event.action == 'hof-retention' || (github.event_name == 'workflow_dispatch' && inputs.task == 'retention') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: aarushmishra/sunstone-builders
+          ref: ${{ env.REF }}
+          token: ${{ secrets.MAIN_REPO_TOKEN }}
+          sparse-checkout: |
+            hof-checker
+            api/_lib/hof-types.ts
+            api/_lib/hof-cred-crypto.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Delete files, logins and sessions 30 days after publish
+        working-directory: hof-checker
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm ci --no-audit --no-fund && npm run retention

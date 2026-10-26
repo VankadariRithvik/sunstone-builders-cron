@@ -1,0 +1,94 @@
+# Hall of Fame AI feature tests (Prompt 4, optional) — hof-checker/ai-tests in
+# aarushmishra/sunstone-builders. Copy into the cron repo as
+# .github/workflows/hof-agent.yml.
+#
+# This repo is PUBLIC: triggers are only workflow_dispatch and
+# repository_dispatch (never pull_request / pull_request_target), logs show
+# only counts and project IDs, and nothing is uploaded as an artifact.
+#
+# Started on Sun 1 Nov by Supabase Cron (hof_dispatch_feature_tests, 0212):
+# once scoring has re-scored after the +3 h re-check and is waiting for feature
+# tests, it sends repository_dispatch 'hof-feature-tests' with
+# client_payload { "cycle": "2026-10", "ref": "main" }. The run does nothing
+# while hof_settings.agent_enabled is off. When it ends (or at its deadline) it
+# POSTs {kind:'continue'} to scoring, which then runs the top-20 extra judge runs.
+#
+# Secrets: MAIN_REPO_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+# HOF_CRED_KEY, HOF_GITHUB_TOKEN, HOF_SCORING_URL, CRON_SECRET (same as the
+# checker) plus ANTHROPIC_API_KEY.
+name: HoF feature tests
+
+on:
+  repository_dispatch:
+    types: [hof-feature-tests]
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: 'Hall of Fame month, e.g. 2026-10'
+        default: '2026-10'
+        required: true
+      ref:
+        description: 'Branch of sunstone-builders to run'
+        default: main
+        required: true
+      projects:
+        description: 'Optional comma-separated project ids (default: Tech top 20 with a working site)'
+        default: ''
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hof-feature-tests
+  cancel-in-progress: false
+
+env:
+  CYCLE: ${{ github.event.client_payload.cycle || inputs.cycle || '2026-10' }}
+  REF: ${{ github.event.client_payload.ref || inputs.ref || 'main' }}
+  PROJECTS: ${{ inputs.projects || '' }}
+  RUN_ID: ft-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  feature-tests:
+    runs-on: ubuntu-latest
+    # The CLI stops itself at 80 minutes and still calls scoring; this is the backstop.
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: aarushmishra/sunstone-builders
+          ref: ${{ env.REF }}
+          token: ${{ secrets.MAIN_REPO_TOKEN }}
+          sparse-checkout: |
+            hof-checker
+            api/_lib/hof-types.ts
+            api/_lib/hof-cred-crypto.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: hof-checker/package-lock.json
+      - name: Install
+        working-directory: hof-checker
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm ci --no-audit --no-fund
+      - name: Run feature tests (Tech top 20)
+        working-directory: hof-checker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          HOF_CRED_KEY: ${{ secrets.HOF_CRED_KEY }}
+          GITHUB_TOKEN: ${{ secrets.HOF_GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HOF_SCORING_URL: ${{ secrets.HOF_SCORING_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Stagehand needs real Chrome (it loads its extension); the runner image has it.
+          export CHROME_PATH="$(command -v google-chrome || command -v google-chrome-stable)"
+          ARGS=(--cycle "$CYCLE" --run-id "$RUN_ID" --concurrency 3 --deadline-min 80)
+          if [ -n "$PROJECTS" ]; then ARGS+=(--projects "$PROJECTS"); fi
+          npm run feature-tests -- "${ARGS[@]}"
