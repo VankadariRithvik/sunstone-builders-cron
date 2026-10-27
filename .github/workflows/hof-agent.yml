@@ -51,7 +51,7 @@ env:
 
 jobs:
   feature-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The CLI stops itself at 80 minutes and still calls scoring; this is the backstop.
     timeout-minutes: 100
     steps:
