@@ -64,6 +64,7 @@ jobs:
             hof-checker
             api/_lib/hof-types.ts
             api/_lib/hof-cred-crypto.ts
+            api/_lib/hof-site-kind.ts
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/setup-node@v4
