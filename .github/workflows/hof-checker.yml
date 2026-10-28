@@ -55,7 +55,7 @@ jobs:
   check:
     if: ${{ (github.event.action == 'hof-checker') || (github.event_name == 'workflow_dispatch' && inputs.task == 'check') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -92,7 +92,7 @@ jobs:
 
   finish:
     needs: check
-    if: ${{ always() && needs.check.result != 'skipped' }}
+    if: ${{ always() && !cancelled() && needs.check.result != 'skipped' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
