@@ -5,8 +5,9 @@
 # set), and nothing is uploaded as an artifact.
 #
 # Started by Supabase Cron (pg_net -> repository_dispatch 'hof-checker'):
-#   nightly 00:30 IST Tue 27 – Sat 31 Oct, freeze 00:05 IST Sun 1 Nov,
-#   re-check ~03:05 IST Sun 1 Nov (no +12 h re-check). client_payload:
+#   nightly 00:30 IST Tue 27 – Sat 31 Oct, freeze 00:05 IST Sun 1 Nov
+#   (the freeze checks only new, changed or failed sites; there is no +3 h or
+#   +12 h re-check). client_payload:
 #   { "kind": "nightly|freeze|recheck_3h", "cycle": "2026-10", "ref": "main" }
 # Daily retention: repository_dispatch 'hof-retention'.
 #
