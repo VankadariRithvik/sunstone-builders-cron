@@ -15,7 +15,8 @@
 #
 # Secrets: MAIN_REPO_TOKEN (fine-grained, read-only Contents on
 # aarushmishra/sunstone-builders), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
-# HOF_CRED_KEY, HOF_GITHUB_TOKEN (repo checks), HOF_SCORING_URL, CRON_SECRET (already in the repo).
+# HOF_CRED_KEY, HOF_GITHUB_TOKEN (repo checks), HOF_SCORING_URL, CRON_SECRET (already in the repo),
+# ANTHROPIC_API_KEY (AI login fallback; optional, add it to this repo's secrets).
 name: HoF website checker
 
 on:
@@ -101,6 +102,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           HOF_CRED_KEY: ${{ secrets.HOF_CRED_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # AI login fallback; skipped when the secret is missing
           GITHUB_TOKEN: ${{ secrets.HOF_GITHUB_TOKEN }}
         run: |
           if [ -n "$PROJECTS" ]; then
