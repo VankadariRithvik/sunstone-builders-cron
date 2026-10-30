@@ -8,7 +8,9 @@
 #   nightly 00:30 IST Tue 27 – Sat 31 Oct, freeze 00:05 IST Sun 1 Nov
 #   (the freeze checks only new, changed or failed sites; there is no +3 h or
 #   +12 h re-check). client_payload:
-#   { "kind": "nightly|freeze|recheck_3h", "cycle": "2026-10", "ref": "main" }
+#   { "kind": "nightly|freeze|manual", "cycle": "2026-10", "ref": "main", "projects": "id1,id2" (optional) }
+# With projects: only those projects are checked (all links, 1 shard) and finish
+# asks scoring for kind rescore_project per id (also for kind manual).
 # Daily retention: repository_dispatch 'hof-retention'.
 #
 # Secrets: MAIN_REPO_TOKEN (fine-grained, read-only Contents on
@@ -37,6 +39,10 @@ on:
         description: 'check | retention'
         default: check
         required: true
+      projects:
+        description: 'Optional: comma-separated project ids. Checks only those (all their links, 1 shard) and re-scores each one.'
+        default: ''
+        required: false
 
 permissions:
   contents: read
@@ -51,6 +57,8 @@ env:
   REF: ${{ github.event.client_payload.ref || inputs.ref || 'main' }}
   TASK: ${{ github.event.action == 'hof-retention' && 'retention' || inputs.task || 'check' }}
   RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+  # Re-check chosen projects: workflow input or client_payload.projects (comma-separated ids).
+  PROJECTS: ${{ github.event.client_payload.projects || inputs.projects || '' }}
 
 jobs:
   check:
@@ -63,6 +71,7 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     steps:
       - uses: actions/checkout@v4
+        if: ${{ env.PROJECTS == '' || matrix.shard == 0 }}
         with:
           repository: aarushmishra/sunstone-builders
           ref: ${{ env.REF }}
@@ -75,21 +84,30 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/setup-node@v4
+        if: ${{ env.PROJECTS == '' || matrix.shard == 0 }}
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: hof-checker/package-lock.json
       - name: Install
+        if: ${{ env.PROJECTS == '' || matrix.shard == 0 }}
         working-directory: hof-checker
         run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium > /dev/null
       - name: Check sites (shard ${{ matrix.shard }} of 10)
+        # With PROJECTS set only shard 0 works (one shard, just those projects).
+        if: ${{ env.PROJECTS == '' || matrix.shard == 0 }}
         working-directory: hof-checker
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           HOF_CRED_KEY: ${{ secrets.HOF_CRED_KEY }}
           GITHUB_TOKEN: ${{ secrets.HOF_GITHUB_TOKEN }}
-        run: npm run check -- --cycle "$CYCLE" --kind "$KIND" --shard ${{ matrix.shard }} --shards 10 --run-id "$RUN_ID"
+        run: |
+          if [ -n "$PROJECTS" ]; then
+            npm run check -- --cycle "$CYCLE" --kind "$KIND" --shard 0 --shards 1 --run-id "$RUN_ID" --projects "$PROJECTS"
+          else
+            npm run check -- --cycle "$CYCLE" --kind "$KIND" --shard ${{ matrix.shard }} --shards 10 --run-id "$RUN_ID"
+          fi
 
   finish:
     needs: check
@@ -126,7 +144,12 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           HOF_SCORING_URL: ${{ secrets.HOF_SCORING_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: npm run finish -- --cycle "$CYCLE" --run-id "$RUN_ID"
+        run: |
+          if [ -n "$PROJECTS" ]; then
+            npm run finish -- --cycle "$CYCLE" --run-id "$RUN_ID" --projects "$PROJECTS"
+          else
+            npm run finish -- --cycle "$CYCLE" --run-id "$RUN_ID"
+          fi
 
   retention:
     if: ${{ github.event.action == 'hof-retention' || (github.event_name == 'workflow_dispatch' && inputs.task == 'retention') }}
